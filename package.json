@@ -9,7 +9,7 @@
     "build": "npm run lint && tsc && vite build",
     "lint": "eslint .",
     "dev": "vite",
-    "deploy": "gh-pages -d dist --add"
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "idb-keyval": "^6.2.2",
