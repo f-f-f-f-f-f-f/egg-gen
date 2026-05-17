@@ -22,6 +22,8 @@ interface Config {
 }
 
 (async () => {
+  const base = import.meta.env.BASE_URL;
+
   const config: Config = {
     eggs: [
       {
@@ -29,37 +31,37 @@ interface Config {
         name: "brown eggs",
         chance: 50,
         price: 10,
-        src: `/eggs/brown.png`,
+        src: `eggs/brown.png`,
       },
       {
         id: "white",
         name: "white eggs",
         chance: 50,
         price: 10,
-        src: `/eggs/white.png`,
+        src: `eggs/white.png`,
       },
       {
         id: "gold",
         name: "gold eggs",
         chance: 5,
         price: 30,
-        src: `/eggs/gold.png`,
+        src: `eggs/gold.png`,
       },
       {
         id: "diamond",
         name: "diamond eggs",
         chance: 3,
         price: 60,
-        src: `/eggs/diamond.png`,
+        src: `eggs/diamond.png`,
       },
       {
         id: "rainbow",
         name: "rainbow eggs",
         chance: 1,
         price: 100,
-        src: `/eggs/rainbow.png`,
+        src: `eggs/rainbow.png`,
       },
-    ],
+    ].map(e => ({...e, src: `${base}${e.src}`})),
   };
 
   const app = new Application();
