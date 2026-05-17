@@ -61,7 +61,7 @@ interface Config {
         price: 100,
         src: `eggs/rainbow.png`,
       },
-    ].map(e => ({...e, src: `${base}${e.src}`})),
+    ].map((e) => ({ ...e, src: `${base}${e.src}` })),
   };
 
   const app = new Application();
