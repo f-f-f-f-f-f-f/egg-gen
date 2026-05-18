@@ -17,6 +17,20 @@ interface Instance {
   y: number;
 }
 
+interface Setting {
+  id: string;
+  name: string;
+  desc?: string;
+  type: "checkbox" | "text";
+  default?: string | number | boolean;
+  onChange: (el: HTMLInputElement) => void | Promise<void>;
+}
+
+interface SettingOption {
+  id: string;
+  val: string | number | boolean;
+}
+
 interface Config {
   eggs: Egg[];
 }
@@ -72,6 +86,7 @@ interface Config {
     height: 0.95 * window.innerHeight, // 95%
     resolution: window.devicePixelRatio || 1,
     autoDensity: true,
+    preference: (await get("noGpu")) ? "canvas" : undefined,
   });
 
   document.body.appendChild(app.canvas);
@@ -226,7 +241,6 @@ interface Config {
       app.stage.addChild(sprite);
     }
   }
-
   // Game saving
   const saveGame = async () => {
     const el = document.querySelector(`#save-msg`) as HTMLDivElement;
@@ -261,14 +275,142 @@ interface Config {
     }
   };
 
+  let autoSaveId: number;
   {
     const el = document.querySelector(`#save-game`) as HTMLButtonElement;
     el.addEventListener("click", saveGame);
-    setInterval(saveGame, 15000);
+    autoSaveId = setInterval(saveGame, 15000);
   }
 
   {
     const el = document.querySelector(`#wipe-save`) as HTMLButtonElement;
     el.addEventListener("click", wipeSave);
+  }
+
+  // Settings
+  {
+    const settings: Setting[] = [
+      {
+        id: "autosave",
+        name: "Autosave",
+        type: "checkbox",
+        default: true,
+        onChange(el) {
+          if (!el.checked) {
+            clearInterval(autoSaveId);
+          } else {
+            autoSaveId = setInterval(saveGame, 15000);
+          }
+        },
+      },
+      {
+        id: "gpu",
+        name: `Use Hardware Acceleration`,
+        type: "checkbox",
+        default: true,
+        desc: `Disable hardware acceleration.
+The game will save and restart once you change this.`,
+        async onChange(el) {
+          if (el.checked) {
+            await set("noGpu", false);
+            await saveGame();
+            location.reload();
+          } else {
+            await set("noGpu", true);
+            await saveGame();
+            location.reload();
+          }
+        },
+      },
+    ];
+
+    const settingOptions: SettingOption[] = (await get("settings"))
+      ? ((await get("settings")) as SettingOption[])
+      : settings.map((s) => ({
+          id: s.id,
+          val:
+            s.type === "checkbox"
+              ? s.default
+                ? true
+                : false
+              : s.default
+                ? s.default
+                : "",
+        }));
+
+    const btn = document.querySelector(`#settings-btn`) as HTMLButtonElement;
+    const menu = document.querySelector(`#settings-menu`) as HTMLDialogElement;
+
+    for (const setting of settings) {
+      const option = settingOptions.find((s) => s.id === setting.id)!;
+
+      const div = document.createElement("div");
+      div.textContent = setting.name;
+
+      const input = document.createElement("input");
+      input.style.margin = "10px 10px";
+      if (setting.type === "checkbox") {
+        input.type = "checkbox";
+        input.checked = Boolean(option.val);
+        input.addEventListener("change", async () => {
+          option.val = input.checked;
+          await setting.onChange(input);
+          await set("settings", settingOptions);
+        });
+      } else if (setting.type === "text") {
+        input.type = "text";
+        input.value = String(option.val);
+        input.addEventListener("change", async () => {
+          option.val = input.value;
+          await setting.onChange(input);
+          await set("settings", settingOptions);
+        });
+      }
+      div.appendChild(input);
+
+      if (setting.desc) {
+        const mark = document.createElement("span");
+        mark.textContent = "?";
+        mark.style.border = `2px solid black`;
+        mark.style.padding = "2px 6px";
+        mark.style.borderRadius = "50%";
+        mark.style.cursor = "pointer";
+        mark.style.backgroundColor = "white";
+        div.appendChild(mark);
+
+        const desc = document.createElement("div");
+        desc.textContent = setting.desc;
+        desc.style.overflowWrap = "break-word";
+        desc.style.backgroundColor = "gainsboro";
+        desc.style.border = "2px solid black";
+        desc.style.display = "none";
+        desc.style.position = "absolute";
+        desc.style.whiteSpace = "pre-wrap";
+        desc.style.padding = "5px";
+        document.body.appendChild(desc);
+
+        mark.addEventListener("mouseenter", (e) => {
+          desc.style.left = `${e.pageX + 30}px`;
+          desc.style.top = `${e.pageY + 30}px`;
+          desc.style.display = "revert";
+        });
+
+        mark.addEventListener("mousemove", (e) => {
+          desc.style.left = `${e.pageX + 30}px`;
+          desc.style.top = `${e.pageY + 30}px`;
+          desc.style.display = "revert";
+        });
+
+        mark.addEventListener("mouseleave", () => {
+          desc.style.display = "none";
+        });
+      }
+
+      menu.appendChild(div);
+    }
+
+    btn.addEventListener("click", () => {
+      menu.showModal();
+    });
   }
 })();
