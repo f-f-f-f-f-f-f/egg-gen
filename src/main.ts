@@ -9,6 +9,9 @@ import {
 } from "pixi.js";
 import Swal from "sweetalert2";
 import { clear, get, set } from "idb-keyval";
+import { marked } from "marked";
+import "driver.js/dist/driver.css";
+import { driver } from "driver.js";
 
 interface Egg {
   id: string;
@@ -39,7 +42,8 @@ interface Setting {
   desc?: string;
   type: "checkbox" | "text";
   default?: string | number | boolean;
-  onChange: (el: HTMLInputElement) => void | Promise<void>;
+  onChange?: (el: HTMLInputElement) => void | Promise<void>;
+  onLoad?: (el: HTMLInputElement) => void | Promise<void>;
 }
 
 interface SettingOption {
@@ -54,6 +58,117 @@ interface Config {
 
 (async () => {
   const base = import.meta.env.BASE_URL;
+
+  /** Both are inclusive. */
+  function random(min: number, max: number) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  class Alert {
+    el: HTMLDialogElement;
+
+    constructor(
+      public title: string,
+      public msg: string,
+      public encodeMode: "text" | "html" | "markdown" = "text",
+      public disableClose: boolean = false,
+      public setStyles: boolean = true,
+    ) {
+      const el = document.querySelector("#temp-alert-dialog")
+        ? document.querySelector<HTMLDialogElement>("#temp-alert-dialog")!
+        : Object.assign(document.createElement("dialog"), {
+            id: "temp-alert-dialog",
+          });
+
+      this.el = el;
+
+      if (this.setStyles) {
+        el.style.cssText = `
+background-color: gray;
+color: white;
+padding: 20px;
+text-align: center;
+align-content: center;
+border: 5px solid black;
+border-radius: 15px;
+display: revert;
+white-space: pre-wrap;
+position: relative;
+`
+          .trim()
+          .replace(/\n/g, "");
+      }
+
+      if (this.encodeMode === "html") {
+        this.reset();
+        this.el.innerHTML = `<h1>${title}</h1><div>${msg}</div>`;
+      } else if (this.encodeMode === "markdown") {
+        this.reset();
+        const h1 = document.createElement("h1");
+        h1.innerHTML = marked(title) as string;
+
+        const div = document.createElement("div");
+        div.innerHTML = marked(msg) as string;
+
+        this.el.appendChild(h1);
+        this.el.appendChild(div);
+      } else if (this.encodeMode === "text") {
+        this.reset();
+        const h1 = document.createElement("h1");
+        h1.textContent = title;
+
+        const div = document.createElement("div");
+        div.textContent = msg;
+
+        this.el.appendChild(h1);
+        this.el.appendChild(div);
+      }
+
+      if (this.disableClose) {
+        this.el.addEventListener("cancel", (e) => {
+          e.preventDefault();
+        });
+      } else {
+        const btn = document.createElement("button");
+        btn.textContent = `\u00D7`; // multiplication sign
+
+        // prettier-ignore
+        btn.style.cssText =
+`
+position: absolute;
+top: 5px;
+right: 10px;
+border: 1px solid white;
+cursor: pointer;
+background-color: red;
+width: 1.25rem;
+height: 1.25rem;
+display: flex;
+align-items: center;
+justify-content: center;
+line-height: 0;
+font-size: 1rem;
+color: white;
+`;
+
+        btn.addEventListener("click", () => this.el.close());
+
+        this.el.appendChild(btn);
+      }
+
+      document.body.prepend(this.el);
+
+      this.el.showModal();
+    }
+
+    reset() {
+      this.el.innerHTML = "";
+    }
+
+    close() {
+      this.el.close();
+    }
+  }
 
   const config: Config = {
     eggs: [
@@ -112,9 +227,51 @@ interface Config {
       {
         id: "double-yolk",
         name: "Double Yolk",
-        chance: 5,
+        chance: 15,
         type: "positive",
         effect: 2, // Double the yolk, so double the price!
+      },
+      {
+        id: "Cracked",
+        name: "Cracked",
+        chance: 5,
+        type: "negative",
+        effect: 0.5,
+      },
+      {
+        id: "poison",
+        name: "Poisoned",
+        chance: 3,
+        type: "negative",
+        effect: -1,
+      },
+      {
+        id: "pasture",
+        name: "Pasture Raised",
+        chance: 7,
+        type: "positive",
+        effect: 1.8,
+      },
+      {
+        id: "free-range",
+        name: "Free Range",
+        chance: 30,
+        type: "positive",
+        effect: 1.5,
+      },
+      {
+        id: "infected",
+        name: "Infected",
+        chance: 30,
+        type: "negative",
+        effect: -0.7,
+      },
+      {
+        id: "unlucky",
+        name: "Unlucky",
+        chance: 30,
+        type: "negative",
+        effect: 0.9,
       },
     ],
   };
@@ -130,7 +287,7 @@ interface Config {
     preference: (await get("noGpu")) ? "canvas" : undefined,
   });
 
-  document.body.appendChild(app.canvas);
+  document.querySelector("#pixi-container")!.appendChild(app.canvas);
 
   app.stage.sortableChildren = true;
 
@@ -222,13 +379,25 @@ interface Config {
   mutationTooltip.init();
 
   const selectEgg = () => {
-    const totalWeight = config.eggs.reduce((acc, egg) => acc + egg.chance, 0);
-    if (totalWeight === 0) return config.eggs[0];
+    // Nudge the chances with the credit score
+    const eggs = config.eggs.map((e) => {
+      let chance = e.chance;
+      if (stats.creditScore < 580 && chance < 50) {
+        chance -= random(5, 15);
+      } else if (stats.creditScore > 700 && chance < 50) {
+        chance += random(5, 15);
+      }
+
+      return { ...e, chance };
+    });
+
+    const totalWeight = eggs.reduce((acc, egg) => acc + egg.chance, 0);
+    if (totalWeight === 0) return eggs[0];
 
     const randomRoll = Math.random() * totalWeight;
     let cursor = 0;
 
-    for (const egg of config.eggs) {
+    for (const egg of eggs) {
       cursor += egg.chance;
       if (randomRoll < cursor) {
         return egg;
@@ -263,6 +432,7 @@ interface Config {
   interface Stats {
     eggs: Record<string, number> & { total: number };
     money: number;
+    creditScore: number;
   }
 
   const stats: Stats = {
@@ -271,7 +441,22 @@ interface Config {
       ...Object.fromEntries(config.eggs.map((e) => [e.id, 0])),
     },
     money: 0,
+    creditScore: 640,
   };
+
+  {
+    // Load the credit score
+    {
+      const score = (await get("stats"))?.creditScore;
+      if (score) stats.creditScore = score;
+    }
+
+    // Load the money
+    {
+      const money = (await get("stats"))?.money;
+      if (money) stats.money = money;
+    }
+  }
 
   const instances: Set<Instance> = (await get("instances"))
     ? ((await get("instances")) as Set<Instance>)
@@ -307,89 +492,161 @@ interface Config {
       }
       el.textContent = `$${stats.money}!`;
     }
+
+    {
+      let el = statsEl.querySelector<HTMLDivElement>(
+        `[data-type="credit-score"]`,
+      );
+      if (!el) {
+        el = document.createElement("div");
+        el.dataset.type = "credit-score";
+        statsEl.appendChild(el);
+      }
+      el.textContent = `Credit Score: ${stats.creditScore}!`;
+    }
   };
 
   updateTotal(); // Initialize the counters
 
-  const makeEgg = async (
-    e: KeyboardEvent | MouseEvent,
-    precreatedInstance?: Instance,
-  ) => {
-    if (e.type === "click" || ("code" in e && e.code === "KeyE")) {
-      // Generate random positions
-      const egg =
-        config.eggs.find((e) => e.id === precreatedInstance?.id) || selectEgg();
-      const mutation =
-        config.mutations.find((e) => e.id === precreatedInstance?.mutation) ||
-        selectMutation();
-      const price =
-        typeof mutation.effect === "number"
-          ? egg.price * mutation.effect
-          : egg.price * (await mutation.effect(egg));
-      const texture = await Assets.load(egg.src);
-      const sprite = new Sprite(texture);
+  let alertedDebt = false;
 
-      sprite.anchor.set(0.5);
+  const makeEgg = async (precreatedInstance?: Instance) => {
+    // Generate random positions
+    const egg =
+      config.eggs.find((e) => e.id === precreatedInstance?.id) || selectEgg();
+    const mutation =
+      config.mutations.find((e) => e.id === precreatedInstance?.mutation) ||
+      (stats.money < 0
+        ? config.mutations.find((m) => m.id === "none")!
+        : selectMutation());
+    const price =
+      typeof mutation.effect === "number"
+        ? egg.price * mutation.effect
+        : egg.price * (await mutation.effect(egg));
+    const texture = await Assets.load(egg.src);
+    const sprite = new Sprite(texture);
 
-      const minX = sprite.width / 2;
-      const maxX = app.screen.width - sprite.width / 2;
+    sprite.anchor.set(0.5);
 
-      const minY = sprite.height / 2;
-      const maxY = app.screen.height - sprite.height / 2;
+    const minX = sprite.width / 2;
+    const maxX = app.screen.width - sprite.width / 2;
 
-      sprite.x = precreatedInstance?.x || Math.random() * (maxX - minX) + minX;
-      sprite.y = precreatedInstance?.y || Math.random() * (maxY - minY) + minY;
+    const minY = sprite.height / 2;
+    const maxY = app.screen.height - sprite.height / 2;
 
-      const instance = precreatedInstance || {
-        id: egg.id,
-        x: sprite.x,
-        y: sprite.y,
-        mutation: mutation.id,
-      };
+    sprite.x = precreatedInstance?.x || Math.random() * (maxX - minX) + minX;
+    sprite.y = precreatedInstance?.y || Math.random() * (maxY - minY) + minY;
 
-      instances.add(instance);
+    const instance = precreatedInstance || {
+      id: egg.id,
+      x: sprite.x,
+      y: sprite.y,
+      mutation: mutation.id,
+    };
 
-      sprite.eventMode = "static";
-      sprite.on("pointertap", () => {
+    instances.add(instance);
+
+    if (await get("deleteEggs"))
+      setTimeout(() => {
         sprite.destroy();
         stats.eggs.total--;
         stats.eggs[egg.id]--;
-        stats.money += price;
         instances.delete(instance);
         mutationTooltip.onPointerOut();
         updateTotal();
-      });
 
-      sprite.on("pointerover", (e) => {
-        mutationTooltip.onPointerOver(e, mutation, price);
-      });
+        // Destroy the egg after 60 seconds to save space
+      }, 60000);
 
-      sprite.on("pointermove", (e) => {
-        mutationTooltip.onPointerMove(e);
-      });
-
-      sprite.on("pointerout", () => {
-        mutationTooltip.onPointerOut();
-      });
-
-      stats.eggs.total++;
-      stats.eggs[egg.id]++;
+    sprite.eventMode = "static";
+    sprite.on("pointertap", () => {
+      sprite.destroy();
+      stats.eggs.total--;
+      stats.eggs[egg.id]--;
+      stats.money += price;
+      instances.delete(instance);
+      mutationTooltip.onPointerOut();
       updateTotal();
 
-      app.stage.addChild(sprite);
-    }
-  };
+      if (stats.money < 0) {
+        if (!alertedDebt) {
+          new Alert(
+            `Uh oh! You're in debt!`,
+            `Your credit score will decrease for every egg
+you make during debt, which also affects future
+eggs until you can bring it back up. Mutations
+will also be disabled till you can remove your
+debt.`,
+            "text",
+          );
+          alertedDebt = true;
+        }
 
-  document.addEventListener("keyup", makeEgg);
-  {
-    const el = document.querySelector(`#generate-egg`) as HTMLButtonElement;
-    el.addEventListener("click", makeEgg);
-  }
+        stats.creditScore = Math.min(
+          850,
+          Math.max(300, stats.creditScore - random(8, 20)),
+        );
+
+        updateTotal();
+      } else {
+        if (price - egg.price > 0) {
+          stats.creditScore = Math.min(
+            850,
+            Math.max(300, stats.creditScore + random(8, 12)),
+          );
+
+          updateTotal();
+        } else if (price - egg.price < 0) {
+          stats.creditScore = Math.min(
+            850,
+            Math.max(300, stats.creditScore - random(4, 16)),
+          );
+
+          updateTotal();
+        }
+        alertedDebt = false;
+      }
+    });
+
+    sprite.on("pointerover", (e) => {
+      mutationTooltip.onPointerOver(e, mutation, price);
+    });
+
+    sprite.on("pointermove", (e) => {
+      mutationTooltip.onPointerMove(e);
+    });
+
+    sprite.on("pointerout", () => {
+      mutationTooltip.onPointerOut();
+    });
+
+    sprite.on("rightclick", (e) => {
+      e.preventDefault();
+      sprite.destroy();
+      stats.eggs.total--;
+      stats.eggs[egg.id]--;
+      instances.delete(instance);
+      mutationTooltip.onPointerOut();
+      updateTotal();
+    });
+
+    app.canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+    });
+
+    stats.eggs.total++;
+    stats.eggs[egg.id]++;
+    updateTotal();
+
+    app.stage.addChild(sprite);
+
+    return sprite;
+  };
 
   // Load saved instances
   if (instances.size > 0) {
     for (const instance of instances) {
-      await makeEgg(new MouseEvent("click"), instance);
+      await makeEgg(instance);
     }
   }
 
@@ -474,6 +731,20 @@ The game will save and restart once you change this.`,
           }
         },
       },
+      {
+        id: "delete-eggs",
+        name: `Delete Eggs`,
+        default: false,
+        desc: `Delete eggs after 60 seconds. This will not claim it as money.`,
+        type: "checkbox",
+        async onChange(el) {
+          if (el.checked) {
+            await set("deleteEggs", true);
+          } else {
+            await set("deleteEggs", false);
+          }
+        },
+      },
     ];
 
     const settingOptions: SettingOption[] = (await get("settings"))
@@ -491,6 +762,9 @@ The game will save and restart once you change this.`,
         }));
 
     const btn = document.querySelector(`#settings-btn`) as HTMLButtonElement;
+    const close = document.querySelector(
+      `#settings-menu-close`,
+    ) as HTMLButtonElement;
     const menu = document.querySelector(`#settings-menu`) as HTMLDialogElement;
 
     for (const setting of settings) {
@@ -506,7 +780,8 @@ The game will save and restart once you change this.`,
         input.checked = Boolean(option.val);
         input.addEventListener("change", async () => {
           option.val = input.checked;
-          await setting.onChange(input);
+          await setting.onLoad?.(input);
+          await setting.onChange?.(input);
           await set("settings", settingOptions);
         });
       } else if (setting.type === "text") {
@@ -514,7 +789,8 @@ The game will save and restart once you change this.`,
         input.value = String(option.val);
         input.addEventListener("change", async () => {
           option.val = input.value;
-          await setting.onChange(input);
+          await setting.onLoad?.(input);
+          await setting.onChange?.(input);
           await set("settings", settingOptions);
         });
       }
@@ -558,6 +834,8 @@ The game will save and restart once you change this.`,
         });
       }
 
+      close.addEventListener("click", () => menu.close());
+
       menu.appendChild(div);
     }
 
@@ -565,12 +843,159 @@ The game will save and restart once you change this.`,
       menu.showModal();
     });
 
+    // Tutorial
+    {
+      const tutorial = async () => {
+        const tour = driver({
+          showProgress: true,
+          showButtons: [],
+
+          onDestroyed: () => {
+            document.addEventListener("keyup", (e) => {
+              if (e.code === "KeyE") makeEgg();
+            });
+            {
+              const el = document.querySelector(
+                `#generate-egg`,
+              ) as HTMLButtonElement;
+              el.addEventListener("click", () => makeEgg());
+            }
+          },
+          steps: [
+            {
+              element: `#generate-egg`,
+              popover: {
+                title: `Generate An Egg`,
+                description: `Press Generate Egg or press E.`,
+                showButtons: [],
+              },
+              onHighlighted: (untypedEl) => {
+                const el = untypedEl as HTMLButtonElement;
+
+                el.addEventListener("click", handleAdvance);
+                document.addEventListener("keyup", handleAdvance);
+              },
+              onDeselected: (untypedEl) => {
+                const el = untypedEl as HTMLButtonElement;
+
+                el.removeEventListener("click", handleAdvance);
+                document.removeEventListener("keyup", handleAdvance);
+              },
+            },
+            {
+              element: `#pixi-container canvas`,
+              popover: {
+                title: `Collect An Egg`,
+                description: `Click an egg to collect it.`,
+                showButtons: [],
+              },
+              onHighlighted: () => {
+                handleAdvance = async () => {
+                  tour.moveNext();
+                };
+
+                egg1.removeAllListeners("rightclick");
+
+                app.canvas.addEventListener("contextmenu", (e) => {
+                  e.preventDefault();
+                });
+
+                egg1.on("pointertap", () => {
+                  (handleAdvance as any)();
+                });
+              },
+            },
+            {
+              element: `#generate-egg`,
+              popover: {
+                title: `Generate Another Egg`,
+                description: `Press Generate Egg or press E for another egg.`,
+                showButtons: [],
+              },
+              onHighlighted: (untypedEl) => {
+                const el = untypedEl as HTMLButtonElement;
+
+                handleAdvance = async (e: MouseEvent | KeyboardEvent) => {
+                  if (
+                    e.type === "click" ||
+                    ("code" in e && e.code === "KeyE")
+                  ) {
+                    egg2 = await makeEgg({
+                      id: "brown",
+                      mutation: "none",
+                      x: app.canvas.width / 2,
+                      y: app.canvas.height / 2,
+                    });
+                    tour.moveNext();
+                  }
+                };
+
+                el.addEventListener("click", handleAdvance);
+                document.addEventListener("keyup", handleAdvance);
+              },
+              onDeselected: (untypedEl) => {
+                const el = untypedEl as HTMLButtonElement;
+
+                el.removeEventListener("click", handleAdvance);
+                document.removeEventListener("keyup", handleAdvance);
+              },
+            },
+            {
+              element: `#pixi-container canvas`,
+              popover: {
+                title: `Destroy An Egg`,
+                description: `Right-click an egg to destroy it.`,
+                showButtons: [],
+              },
+              onHighlighted: () => {
+                handleAdvance = async () => {
+                  tour.moveNext();
+                };
+
+                egg2.removeAllListeners("pointertap");
+
+                egg2.on("rightclick", () => {
+                  (handleAdvance as any)();
+                });
+              },
+            },
+          ],
+        });
+
+        let egg1: Sprite;
+        let egg2: Sprite;
+
+        let handleAdvance = async (e: MouseEvent | KeyboardEvent) => {
+          if (e.type === "click" || ("code" in e && e.code === "KeyE")) {
+            egg1 = await makeEgg({
+              id: "brown",
+              mutation: "none",
+              x: app.canvas.width / 2,
+              y: app.canvas.height / 2,
+            });
+            tour.moveNext();
+          }
+        };
+
+        tour.drive();
+
+        await set("tutorialFinished", true);
+      };
+
+      document.querySelector(`#tutorial`)!.addEventListener("click", tutorial);
+
+      if (!(await get("tutorialFinished"))) {
+        await tutorial();
+      }
+    }
+
     const cheatMode = () => {
       return {
         makeEgg,
         settings,
         updateTotal,
         config,
+        stats,
         selectEgg,
         selectMutation,
         saveGame,
@@ -581,9 +1006,7 @@ The game will save and restart once you change this.`,
     (window as any).Gulcheat = cheatMode;
     (window as any).cheatGul = async () => {
       alert(`Guess you didn't realize the 'Gul' stood for gullible!`);
-      alert(
-        `Also go fuck yourself, but preserve some of your dignity by playing this game:\nhttps://jjohnstongames.itch.io/the-roottrees-are-dead`,
-      );
+      alert(`Also go fuck yourself`);
       await saveGame();
       window.open("", "_self")?.close();
     };

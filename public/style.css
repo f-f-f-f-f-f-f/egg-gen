@@ -66,3 +66,40 @@ dialog {
   background-color: gray;
   color: black;
 }
+
+#settings-menu-close {
+  position: absolute;
+  top: 5px;
+  right: 10px;
+  border: 1px solid white;
+  cursor: pointer;
+  background-color: red;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  font-size: 1rem;
+  color: white;
+}
+
+#settings-menu {
+  position: relative;
+}
+
+.flash {
+  animation: flash 0.6s infinite alternate;
+}
+
+@keyframes flash {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 1;
+  }
+}

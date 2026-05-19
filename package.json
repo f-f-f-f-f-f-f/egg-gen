@@ -12,7 +12,9 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "driver.js": "^1.4.0",
     "idb-keyval": "^6.2.2",
+    "marked": "^18.0.4",
     "pixi.js": "^8.8.1",
     "sweetalert2": "^11.26.24"
   },
