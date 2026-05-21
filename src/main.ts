@@ -161,12 +161,19 @@ color: white;
       this.el.showModal();
     }
 
+    show() {
+      this.el.showModal();
+      return this;
+    }
+
     reset() {
       this.el.innerHTML = "";
+      return this;
     }
 
     close() {
       this.el.close();
+      return this;
     }
   }
 
@@ -510,6 +517,17 @@ color: white;
 
   let alertedDebt = false;
 
+  {
+    const el = document.querySelector(`button#shop`) as HTMLButtonElement;
+    const menu = new Alert(
+      `Coming Soon!`,
+      `The shop hasn't been implemented yet. It'll be coming soon!`,
+    ).close();
+    el.addEventListener("click", () => {
+      menu.show();
+    });
+  }
+
   const makeEgg = async (precreatedInstance?: Instance) => {
     // Generate random positions
     const egg =
@@ -845,20 +863,31 @@ The game will save and restart once you change this.`,
 
     // Tutorial
     {
+      const eHandler = (e: KeyboardEvent) => {
+        if (e.code === "KeyE") makeEgg();
+      };
+
+      const clickHandler = () => makeEgg();
+
+      document.addEventListener("keyup", eHandler);
+      {
+        const el = document.querySelector(`#generate-egg`) as HTMLButtonElement;
+        el.addEventListener("click", clickHandler);
+      }
+
       const tutorial = async () => {
         const tour = driver({
           showProgress: true,
           showButtons: [],
+          allowClose: false,
 
           onDestroyed: () => {
-            document.addEventListener("keyup", (e) => {
-              if (e.code === "KeyE") makeEgg();
-            });
+            document.addEventListener("keyup", eHandler);
             {
               const el = document.querySelector(
                 `#generate-egg`,
               ) as HTMLButtonElement;
-              el.addEventListener("click", () => makeEgg());
+              el.addEventListener("click", clickHandler);
             }
           },
           steps: [
@@ -871,6 +900,14 @@ The game will save and restart once you change this.`,
               },
               onHighlighted: (untypedEl) => {
                 const el = untypedEl as HTMLButtonElement;
+
+                document.removeEventListener("keyup", eHandler);
+                {
+                  const el = document.querySelector(
+                    `#generate-egg`,
+                  ) as HTMLButtonElement;
+                  el.removeEventListener("click", clickHandler);
+                }
 
                 el.addEventListener("click", handleAdvance);
                 document.addEventListener("keyup", handleAdvance);
@@ -957,6 +994,42 @@ The game will save and restart once you change this.`,
                 egg2.on("rightclick", () => {
                   (handleAdvance as any)();
                 });
+              },
+            },
+            {
+              element: `#stats`,
+              popover: {
+                title: `Stats`,
+                description: `Over here are your statistics, including eggs and money.`,
+              },
+            },
+            {
+              element: `#settings-btn`,
+              popover: {
+                title: `Settings`,
+                description: `Open the settings here.`,
+              },
+            },
+            {
+              popover: {
+                title: `Mutations`,
+                description: `Some eggs have mutations, which affect their value
+when you collect them. Mutations can be bad, reducing
+their value, or good, increasing its value. You can
+hover over an egg to see its mutation as well as its
+final value.`,
+              },
+            },
+            {
+              element: `[data-type="credit-score"]`,
+              popover: {
+                title: `Credit Score`,
+                description: `Your credit score affects how many rare eggs you get.
+If you collect an egg with a bad mutation, your credit
+score will decrease. If you collect an egg with a good
+mutation, it'll increase. A good credit score will increase
+the chances of a rare egg, while a bad one will decrease
+it.`,
               },
             },
           ],
